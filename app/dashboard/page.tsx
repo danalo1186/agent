@@ -2,10 +2,24 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
+// Define property type
+type Property = {
+  id: string;
+  address: string;
+  price: number;
+  user_id: string;
+};
+
+// Define user type (Supabase auth user)
+type User = {
+  id: string;
+  email?: string;
+};
+
 export default function Dashboard() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState<any[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [address, setAddress] = useState("");
   const [price, setPrice] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -14,7 +28,7 @@ export default function Dashboard() {
     async function loadUser() {
       const { data } = await supabase.auth.getUser();
       if (data?.user) {
-        setUser(data.user);
+        setUser({ id: data.user.id, email: data.user.email ?? undefined });
         await loadProperties(data.user.id);
       } else {
         window.location.href = "/login";
@@ -30,10 +44,19 @@ export default function Dashboard() {
       .from("properties")
       .select("*")
       .eq("user_id", userId);
-    if (!error) setProperties(data || []);
+
+    if (!error && data) {
+      const typedData = data.map((p) => ({
+        id: p.id as string,
+        address: p.address as string,
+        price: Number(p.price),
+        user_id: p.user_id as string,
+      }));
+      setProperties(typedData);
+    }
   }
 
-  async function addProperty(e: React.FormEvent) {
+  async function addOrUpdateProperty(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
 
@@ -41,12 +64,13 @@ export default function Dashboard() {
       // UPDATE
       const { error } = await supabase
         .from("properties")
-        .update({ address, price })
+        .update({ address, price: Number(price) })
         .eq("id", editingId)
         .eq("user_id", user.id);
 
-      if (error) alert("Error updating: " + error.message);
-      else {
+      if (error) {
+        alert("Error updating: " + error.message);
+      } else {
         setEditingId(null);
         setAddress("");
         setPrice("");
@@ -56,10 +80,11 @@ export default function Dashboard() {
       // INSERT
       const { error } = await supabase
         .from("properties")
-        .insert([{ address, price, user_id: user.id }]);
+        .insert([{ address, price: Number(price), user_id: user.id }]);
 
-      if (error) alert("Error adding: " + error.message);
-      else {
+      if (error) {
+        alert("Error adding: " + error.message);
+      } else {
         setAddress("");
         setPrice("");
         await loadProperties(user.id);
@@ -67,10 +92,10 @@ export default function Dashboard() {
     }
   }
 
-  async function startEdit(p: any) {
+  function startEdit(p: Property) {
     setEditingId(p.id);
     setAddress(p.address);
-    setPrice(p.price);
+    setPrice(String(p.price));
   }
 
   async function deleteProperty(id: string) {
@@ -81,8 +106,11 @@ export default function Dashboard() {
       .eq("id", id)
       .eq("user_id", user.id);
 
-    if (error) alert("Error deleting: " + error.message);
-    else await loadProperties(user.id);
+    if (error) {
+      alert("Error deleting: " + error.message);
+    } else {
+      await loadProperties(user.id);
+    }
   }
 
   async function handleLogout() {
@@ -100,7 +128,7 @@ export default function Dashboard() {
       <h2 className="text-xl font-semibold mt-6">
         {editingId ? "Edit Property" : "Add Property"}
       </h2>
-      <form onSubmit={addProperty} className="space-y-3">
+      <form onSubmit={addOrUpdateProperty} className="space-y-3">
         <input
           className="w-full border p-2 rounded"
           placeholder="Address"
